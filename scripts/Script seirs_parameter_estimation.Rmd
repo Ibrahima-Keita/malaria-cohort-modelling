@@ -1,0 +1,72 @@
+﻿---
+title: "Estimation Descriptive des Paramètres du Modèle SEIRS"
+author: "Ibrahima KEITA"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+## Chargement des données
+
+```{r setup, include=FALSE}
+data <- read_csv("synthetic_malaria_cohort.csv")
+```
+## Classification des états d'infection
+
+```{r setup, include=FALSE}
+data <- data %>%
+  mutate(InfectionStatus = case_when(
+    RDT_Result == "Positive" & Fever == 1 ~ "Is",
+    RDT_Result == "Positive" & Fever == 0 ~ "Ia",
+    TRUE ~ "S"
+  ))
+```
+## Estimation de la proportion asymptomatique (p)
+
+```{r setup, include=FALSE}
+infected <- data %>% filter(InfectionStatus %in% c("Ia", "Is"))
+n_total_infected <- nrow(infected)
+n_asymptomatic <- sum(infected$InfectionStatus == "Ia")
+p_hat <- n_asymptomatic / n_total_infected
+
+p_hat
+```
+## Durée moyenne des épisodes infectieux et estimation de gamma
+
+```{r setup, include=FALSE}
+data <- data %>% arrange(ChildID, VisitMonth)
+
+data <- data %>%
+  group_by(ChildID) %>%
+  mutate(InfectionGroup = cumsum(InfectionStatus != lag(InfectionStatus, default = first(InfectionStatus)))) %>%
+  ungroup()
+
+durations <- data %>%
+  filter(InfectionStatus %in% c("Ia", "Is")) %>%
+  group_by(ChildID, InfectionGroup, InfectionStatus) %>%
+  summarise(Duration = n(), .groups = "drop")
+
+mean_durations <- durations %>%
+  group_by(InfectionStatus) %>%
+  summarise(MeanDuration = mean(Duration), .groups = "drop")
+
+gamma_estimates <- mean_durations %>%
+  mutate(Gamma = round(1 / MeanDuration, 3))
+
+gamma_estimates
+```
+## Visualisation des durées moyennes
+
+```{r setup, include=FALSE}
+ggplot(mean_durations, aes(x = InfectionStatus, y = MeanDuration, fill = InfectionStatus)) +
+  geom_bar(stat = "identity", width = 0.5) +
+  geom_text(aes(label = round(MeanDuration, 2)), vjust = -0.5) +
+  labs(title = "Durée moyenne des infections", y = "Nombre de visites (mois)", x = "Type d'infection") +
+  theme_minimal()
+```
+
+
+```{r setup, include=FALSE}
